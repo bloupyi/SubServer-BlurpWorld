@@ -2,17 +2,13 @@ package com.stackmc.subserver.commands.subs;
 
 import com.stackmc.subserver.SubServer;
 import com.stackmc.subserver.instance.Instance;
-import com.stackmc.subserver.worldgen.SWMUtils;
 import lombok.RequiredArgsConstructor;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 
-import java.io.File;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 public class LoadSubCommand implements TabExecutor {
@@ -58,13 +54,6 @@ public class LoadSubCommand implements TabExecutor {
             return Collections.emptyList();
         }
 
-        File file = new File(SWMUtils.getWorldSlimeFolder());
-        File[] files = file.listFiles();
-
-        if (files == null) {
-            return Collections.emptyList();
-        }
-
-        return Arrays.stream(files).map(File::getName).map(name -> name.split("\\.slime")[0]).collect(Collectors.toList());
+        return plugin.getWorldRepository().templateNames().stream().sorted().toList();
     }
 }

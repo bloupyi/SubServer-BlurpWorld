@@ -2,31 +2,31 @@
 
 ## About SubServer
 
-SubServer is a Minecraft **26.2** plugin made with Paper. The plugin splits your server into instances. An instance can have multiples maps and players, like a sub-server. It uses Advanced Slime Paper to fast load maps.
+SubServer is a Minecraft **26.2** plugin for the BlurpWorld Paper fork. It splits a server into isolated instances backed by compressed BlurpWorld snapshots.
 
 ## Requirements
 
 | Component | Version |
 |-----------|---------|
-| Server    | Advanced Slime Paper **26.2** (ASP `4.2.0-SNAPSHOT`, branch `develop`) |
+| Server    | BlurpWorld Paper **26.2** |
 | Java      | **25** (required by Paper 26.2) |
-| API       | `io.papermc.paper:paper-api:26.2.build.124-stable` |
+| API       | `io.papermc.paper:paper-api:26.2.local-SNAPSHOT` |
 
-## Depend
+## Snapshots
 
-[Advanced Slime Paper (ASP)](https://github.com/InfernalSuite/AdvancedSlimePaper)
+Place durable `.bws` archives in `plugins/SubServer/maps`. The file name without `.bws` is the template name used by `InstanceType#addWorld`. Snapshots already loaded in BlurpWorld can also be resolved by their label or source-world name.
 
-Get a 26.2 server jar from the InfernalSuite build API:
+Temporary instance worlds are restored asynchronously and discarded on close. Worlds marked savable are snapshotted, exported back to `plugins/SubServer/maps/<template>.bws`, then unloaded.
 
-```bash
-# latest 26.2 build, then pick the asp-server.jar file id
-curl -s https://api.infernalsuite.com/v1/projects/asp/mcversion/26.2/latest
-curl -L -o asp-server.jar \
-  https://api.infernalsuite.com/v1/projects/asp/d1607236-69ed-4d1d-a286-62d2f0712dad/download/18d1b22c-e9a7-42ab-b790-e77d5ac95da0
+## Build
+
+Publish the fork API locally, then build SubServer:
+
+```powershell
+.\gradlew.bat :paper-api:publishToMavenLocal
+cd integrations\SubServer-BlurpWorld-26.2
+mvn package
 ```
-
-The matching API artifacts come from `https://repo.infernalsuite.com/repository/maven-snapshots/`
-(`com.infernalsuite.asp:api` and `com.infernalsuite.asp:file-loader`, version `4.2.0-SNAPSHOT`).
 
 ### Using SubServer
 
@@ -46,14 +46,13 @@ InstanceType game = new InstanceType("my_game", false, 8);
 game.setMaxInstancesCount(0);          // on demand
 game.setCloseWhenEmpty(true);          // closed once everyone leaves
 game.setEmptyGraceSeconds(15);
-game.addWorld("my_map", false);        // copied to <uuid>_my_map.slime, deleted on close
+game.addWorld("my_map", false);        // restored to a UUID-prefixed memory world
 
 factory.registerType(game);
 factory.createInstance(game, instance -> instance.joinInstance(player));
 ```
 
-`Instance#loadWorld` takes an optional failure callback; on failure the temporary copy is
-deleted and the instance is abandoned instead of being reported as ready.
+`Instance#loadWorld` takes an optional failure callback. Snapshot preparation, import, export and persistence run asynchronously; Bukkit world attachment and unloading remain on the server thread.
 
 ## Contributors
 - [LoanSpac](https://github.com/LoanSpac)

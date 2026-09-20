@@ -6,7 +6,7 @@
 
     <groupId>com.stackmc</groupId>
     <artifactId>SubServer</artifactId>
-    <version>1.4.8-SNAPSHOT</version>
+    <version>1.5.0-blurpworld-SNAPSHOT</version>
     <packaging>jar</packaging>
 
     <name>SubServer</name>
@@ -20,10 +20,7 @@
     <properties>
         <java.version>25</java.version>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- Minecraft 26.2 : Paper publie desormais <mcVersion>.build.<n>-(stable|alpha). -->
-        <paper.version>26.2.build.124-stable</paper.version>
-        <!-- Advanced Slime Paper compatible 26.2 (branche develop, build du 2026-08-31). -->
-        <asp.version>4.2.0-SNAPSHOT</asp.version>
+        <paper.version>26.2.local-SNAPSHOT</paper.version>
         <!-- 1.18.30 ne sait pas lire le bytecode Java 25 : Lombok doit suivre le JDK. -->
         <lombok.version>1.18.48</lombok.version>
     </properties>
@@ -93,14 +90,6 @@
             <id>sonatype</id>
             <url>https://oss.sonatype.org/content/groups/public/</url>
         </repository>
-        <repository>
-            <id>is-snapshots</id>
-            <url>https://repo.infernalsuite.com/repository/maven-snapshots/</url>
-        </repository>
-        <repository>
-            <id>flow-nbt</id>
-            <url>https://repo.rapture.pw/repository/maven-releases/</url>
-        </repository>
     </repositories>
 
     <dependencies>
@@ -126,18 +115,6 @@
             <groupId>org.reflections</groupId>
             <artifactId>reflections</artifactId>
             <version>0.10.2</version>
-        </dependency>
-        <dependency>
-            <groupId>com.infernalsuite.asp</groupId>
-            <artifactId>file-loader</artifactId>
-            <version>${asp.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.infernalsuite.asp</groupId>
-            <artifactId>api</artifactId>
-            <version>${asp.version}</version>
-            <scope>provided</scope>
         </dependency>
     </dependencies>
 </project>

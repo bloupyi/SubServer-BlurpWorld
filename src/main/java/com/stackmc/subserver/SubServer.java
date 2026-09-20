@@ -1,28 +1,24 @@
 package com.stackmc.subserver;
 
-import com.infernalsuite.asp.api.loaders.SlimeLoader;
 import com.stackmc.subserver.commands.SubServerCommand;
-import com.stackmc.subserver.worldgen.TreeSlimeLoader;
 import com.stackmc.subserver.instance.Instance;
 import com.stackmc.subserver.instance.InstanceFactory;
 import com.stackmc.subserver.listeners.EventListener;
 import com.stackmc.subserver.listeners.InstanceListener;
+import com.stackmc.subserver.worldgen.BlurpWorldRepository;
 import lombok.Getter;
 import org.bukkit.Bukkit;
 import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-
-import static com.stackmc.subserver.worldgen.SWMUtils.getWorldSlimeFolder;
 
 public final class SubServer extends JavaPlugin {
 
     private final List<Listener> listeners = new ArrayList<>();
     @Getter private final InstanceFactory instanceFactory = new InstanceFactory(this);
-    @Getter public static SlimeLoader loader;
+    @Getter private BlurpWorldRepository worldRepository;
 
     /** true = les joueurs se voient d'une instance a l'autre (sinon isolation par instance). */
     @Getter private boolean crossInstanceVisibility;
@@ -34,21 +30,31 @@ public final class SubServer extends JavaPlugin {
         saveDefaultConfig();
         this.crossInstanceVisibility = getConfig().getBoolean("cross-instance.visibility", false);
         this.crossInstanceChat = getConfig().getBoolean("cross-instance.chat", false);
-        loader = new TreeSlimeLoader(new File(getWorldSlimeFolder()));
+        this.worldRepository = new BlurpWorldRepository(this, Bukkit.getServer().getBlurpWorldManager());
         this.listeners.add(new InstanceListener(this));
         this.listeners.add(new EventListener(this));
         registerListeners();
         registerCommands();
 
-        instanceFactory.startLoop();
+        this.worldRepository.loadTemplates().whenComplete((count, error) -> Bukkit.getScheduler().runTask(this, () -> {
+            if (error != null) {
+                getLogger().severe("Impossible de charger les snapshots BlurpWorld : " + rootMessage(error));
+            } else {
+                getLogger().info(count + " snapshot(s) BlurpWorld chargé(s).");
+            }
+            instanceFactory.startLoop();
+        }));
     }
 
     @Override
     public void onDisable() {
         instanceFactory.stopLoop();
         List<Instance> instancesSnapshot = new ArrayList<>(Instance.getInstances());
-        instancesSnapshot.forEach(Instance::close);
+        instancesSnapshot.forEach(instance -> instance.close(false));
         Instance.getInstances().clear();
+        if (this.worldRepository != null) {
+            this.worldRepository.shutdown();
+        }
     }
 
     public void registerCommands(){
@@ -57,5 +63,13 @@ public final class SubServer extends JavaPlugin {
 
     public void registerListeners(){
         this.listeners.forEach(listener -> Bukkit.getPluginManager().registerEvents(listener, this));
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 }

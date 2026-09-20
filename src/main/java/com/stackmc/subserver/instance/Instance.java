@@ -1,14 +1,9 @@
 package com.stackmc.subserver.instance;
 
-import com.infernalsuite.asp.api.exceptions.CorruptedWorldException;
-import com.infernalsuite.asp.api.exceptions.NewerFormatException;
-import com.infernalsuite.asp.api.exceptions.UnknownWorldException;
-import com.infernalsuite.asp.api.world.SlimeWorld;
 import com.stackmc.subserver.SubServer;
 import com.stackmc.subserver.events.InstanceChatEvent;
 import com.stackmc.subserver.events.InstanceJoinEvent;
 import com.stackmc.subserver.events.InstanceQuitEvent;
-import com.stackmc.subserver.worldgen.SWMUtils;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.Setter;
@@ -22,9 +17,6 @@ import org.bukkit.event.Event;
 import org.bukkit.event.Listener;
 import org.jetbrains.annotations.Nullable;
 
-import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -78,6 +70,7 @@ public class Instance {
     public static class InstanciableWorld {
         private final World world;
         private final boolean savable;
+        private final String templateName;
     }
 
     public InstanciableWorld getInstanciableWorld(String worldName) {
@@ -106,6 +99,10 @@ public class Instance {
     }
 
     public void close() {
+        this.close(true);
+    }
+
+    public void close(boolean persistSavableWorlds) {
         if (closed) {
             return;
         }
@@ -120,18 +117,19 @@ public class Instance {
 
             new ArrayList<>(bukkitWorld.getPlayers()).forEach(player -> player.teleport(fallback));
 
-            boolean unloaded = Bukkit.unloadWorld(bukkitWorld, world.isSavable());
-            if (!unloaded) {
-                Bukkit.getLogger().warning("Déchargement du monde " + worldName
-                        + " impossible (joueurs restants, WorldUnloadEvent annulé, ou arrêt serveur).");
-            }
-
-            if (!world.isSavable()) {
-                try {
-                    SWMUtils.deleteWorld(worldName);
-                } catch (RuntimeException e) {
-                    Bukkit.getLogger().warning("Impossible de supprimer le monde temporaire " + worldName + " : " + e.getMessage());
+            if (!persistSavableWorlds) {
+                if (!Bukkit.unloadWorld(bukkitWorld, false)) {
+                    Bukkit.getLogger().warning("Déchargement du monde " + worldName + " impossible pendant l'arrêt.");
+                } else {
+                    plugin.getWorldRepository().discard(worldName);
                 }
+            } else {
+                plugin.getWorldRepository().release(world.getTemplateName(), bukkitWorld, world.isSavable())
+                        .exceptionally(error -> {
+                            Bukkit.getLogger().warning("Libération du monde " + worldName
+                                    + " impossible : " + rootMessage(error));
+                            return null;
+                        });
             }
         });
 
@@ -164,22 +162,15 @@ public class Instance {
             return false;
         }
 
-        boolean unloaded = Bukkit.unloadWorld(bukkitWorld, target.isSavable());
-        if (!unloaded) {
-            Bukkit.getLogger().warning("Déchargement du monde " + worldName + " impossible.");
-            return false;
-        }
-
-        worlds.remove(target);
-
-        if (!target.isSavable()) {
-            try {
-                SWMUtils.deleteWorld(worldName);
-            } catch (RuntimeException e) {
-                Bukkit.getLogger().warning("Impossible de supprimer le monde temporaire "
-                        + worldName + " : " + e.getMessage());
-            }
-        }
+        plugin.getWorldRepository().release(target.getTemplateName(), bukkitWorld, target.isSavable())
+                .whenComplete((ignored, error) -> {
+                    if (error != null) {
+                        Bukkit.getLogger().warning("Déchargement du monde " + worldName
+                                + " impossible : " + rootMessage(error));
+                        return;
+                    }
+                    worlds.remove(target);
+                });
         return true;
     }
 
@@ -195,52 +186,22 @@ public class Instance {
         String destWorldName = isSavable ? worldName : getUniqueId() + "_" + worldName;
 
         long startTime = System.currentTimeMillis();
-        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            SlimeWorld read;
-            try {
-                if (!isSavable) {
-                    SWMUtils.copy(worldName, destWorldName);
-                }
-                read = SWMUtils.read(destWorldName, !isSavable);
-            } catch (IOException | UnknownWorldException | CorruptedWorldException | NewerFormatException e) {
+        plugin.getWorldRepository().loadWorld(worldName, destWorldName).whenComplete((world, error) -> {
+            if (error != null) {
                 fail(finalCallback, finalFailure,
-                        "§cLecture du monde " + worldName + " impossible : " + e.getMessage(), isSavable, destWorldName);
+                        "§cChargement du snapshot " + worldName + " impossible : " + rootMessage(error));
                 return;
             }
 
-            Bukkit.getScheduler().runTask(plugin, () -> {
-                World world;
-                try {
-                    SWMUtils.attach(read);
-                    world = Bukkit.getWorld(destWorldName);
-                } catch (IllegalArgumentException e) {
-                    world = null;
-                }
-
-                if (world == null) {
-                    fail(finalCallback, finalFailure,
-                            "§cChargement du monde " + destWorldName + " impossible.", isSavable, destWorldName);
-                    return;
-                }
-
-                addWorld(world, isSavable);
-                long totalTime = System.currentTimeMillis() - startTime;
-                finalCallback.accept("Monde " + destWorldName + " chargé en " + totalTime + "ms ou "
-                        + ((float) totalTime / 50f) + " ticks .");
-            });
+            addWorld(world, isSavable, worldName);
+            long totalTime = System.currentTimeMillis() - startTime;
+            finalCallback.accept("Monde " + destWorldName + " chargé en " + totalTime + "ms ou "
+                    + ((float) totalTime / 50f) + " ticks .");
         });
     }
 
-    /** Signale l'echec et efface la copie temporaire, qui ne sera jamais rattachee. */
-    private void fail(Consumer<String> callback, Runnable onFailure, String message,
-                      boolean isSavable, String destWorldName) {
-        if (!isSavable) {
-            try {
-                SWMUtils.deleteWorld(destWorldName);
-            } catch (RuntimeException ignored) {
-            }
-        }
-
+    /** Signale l'echec de chargement sur le thread serveur. */
+    private void fail(Consumer<String> callback, Runnable onFailure, String message) {
         Runnable report = () -> {
             callback.accept(message);
             onFailure.run();
@@ -252,8 +213,8 @@ public class Instance {
         }
     }
 
-    public void addWorld(World world, boolean isSavable) {
-        worlds.add(new InstanciableWorld(world,isSavable));
+    public void addWorld(World world, boolean isSavable, String templateName) {
+        worlds.add(new InstanciableWorld(world, isSavable, templateName));
     }
 
     public boolean joinInstance(Player player) {
@@ -333,5 +294,13 @@ public class Instance {
 
     public List<Player> getPlayers() {
         return offlinePlayers.stream().filter(OfflinePlayer::isOnline).map(OfflinePlayer::getPlayer).collect(Collectors.toList());
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 }
