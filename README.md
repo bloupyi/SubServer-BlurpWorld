@@ -18,6 +18,8 @@ Place durable `.bws` archives in `plugins/SubServer/maps`. The file name without
 
 Temporary instance worlds are restored asynchronously and discarded on close. Worlds marked savable are snapshotted, exported back to `plugins/SubServer/maps/<template>.bws`, then unloaded.
 
+The `.bws` archive also carries the seed, time, spawn, gamerules, weather, border, PDC and other per-world saved data. Each restored instance receives a fresh Paper world UUID so clones can coexist. Instance worlds therefore do not create Paper dimension folders or metadata files.
+
 ## Build
 
 Publish the fork API locally, then build SubServer:
