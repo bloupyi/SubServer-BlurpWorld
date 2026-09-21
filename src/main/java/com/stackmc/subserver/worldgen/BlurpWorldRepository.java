@@ -2,10 +2,12 @@ package com.stackmc.subserver.worldgen;
 
 import com.stackmc.subserver.SubServer;
 import io.papermc.paper.blurpworld.BlurpWorldManager;
-import io.papermc.paper.blurpworld.BlurpWorldSnapshot;
 import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Locale;
 import java.util.Set;
@@ -28,7 +30,7 @@ public final class BlurpWorldRepository {
     private final SubServer plugin;
     private final BlurpWorldManager worlds;
     private final Path mapsDirectory;
-    private final ConcurrentHashMap<String, UUID> templates = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Path> templates = new ConcurrentHashMap<>();
     private final ExecutorService ioExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public BlurpWorldRepository(SubServer plugin, BlurpWorldManager worlds) {
@@ -49,9 +51,14 @@ public final class BlurpWorldRepository {
             } catch (IOException exception) {
                 throw new CompletionException(exception);
             }
-        }, this.ioExecutor).thenCompose(files -> {
-            CompletableFuture<?>[] imports = files.stream().map(this::importTemplate).toArray(CompletableFuture[]::new);
-            return CompletableFuture.allOf(imports).thenApply(ignored -> files.size());
+        }, this.ioExecutor).thenApply(files -> {
+            files.forEach(path -> {
+                String fileName = path.getFileName().toString();
+                String templateName = fileName.substring(0, fileName.length() - SNAPSHOT_EXTENSION.length());
+                validateTemplateName(templateName);
+                this.templates.put(normalize(templateName), path);
+            });
+            return files.size();
         });
     }
 
@@ -60,11 +67,19 @@ public final class BlurpWorldRepository {
     }
 
     public CompletableFuture<World> loadWorld(String templateName, String destinationName) {
-        UUID snapshotId = this.resolve(templateName);
-        if (snapshotId == null) {
-            return CompletableFuture.failedFuture(new IllegalArgumentException("Snapshot inconnu : " + templateName));
+        Path archive = this.templates.get(normalize(templateName));
+        CompletableFuture<?> prepared;
+        if (archive != null) {
+            prepared = CompletableFuture.supplyAsync(() -> readArchive(archive), this.ioExecutor)
+                .thenCompose(data -> this.worlds.prepareFromArchiveAsync(destinationName, data));
+        } else {
+            UUID snapshotId = this.resolveSnapshot(templateName);
+            if (snapshotId == null) {
+                return CompletableFuture.failedFuture(new IllegalArgumentException("Snapshot inconnu : " + templateName));
+            }
+            prepared = this.worlds.prepareAsync(destinationName, snapshotId);
         }
-        return this.worlds.prepareAsync(destinationName, snapshotId).thenCompose(ignored -> this.onMain(() -> {
+        return prepared.thenCompose(ignored -> this.onMain(() -> {
             World world = Bukkit.createWorld(new WorldCreator(destinationName)
                 .generator(new BlurpVoidGenerator()));
             if (world == null) {
@@ -73,11 +88,11 @@ public final class BlurpWorldRepository {
             }
             world.setAutoSave(false);
             return world;
-        }));
+        })).thenCompose(world -> world.getChunkAtAsync(world.getSpawnLocation(), true).thenApply(ignored -> world));
     }
 
     public CompletableFuture<Void> release(String templateName, World world, boolean save) {
-        CompletableFuture<?> saved = save ? this.saveTemplate(templateName, world) : CompletableFuture.completedFuture(null);
+        CompletableFuture<?> saved = save ? this.persist(templateName, world) : CompletableFuture.completedFuture(null);
         return saved.thenCompose(ignored -> this.onMain(() -> {
             if (!Bukkit.unloadWorld(world, false)) {
                 throw new IllegalStateException("Impossible de décharger " + world.getName());
@@ -92,54 +107,57 @@ public final class BlurpWorldRepository {
     }
 
     public void shutdown() {
-        this.ioExecutor.shutdown();
+        this.ioExecutor.close();
     }
 
-    private CompletableFuture<BlurpWorldSnapshot> saveTemplate(String templateName, World world) {
+    public CompletableFuture<Void> persist(String templateName, World world) {
         validateTemplateName(templateName);
-        return this.worlds.snapshot(world, templateName).thenCompose(snapshot ->
-            this.worlds.exportSnapshotAsync(snapshot.id()).thenCompose(archive -> CompletableFuture.supplyAsync(() -> {
-                Path target = this.mapsDirectory.resolve(templateName + SNAPSHOT_EXTENSION);
-                try {
-                    Files.createDirectories(this.mapsDirectory);
-                    Files.write(target, archive, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                } catch (IOException exception) {
-                    throw new CompletionException(exception);
-                }
-                this.templates.put(normalize(templateName), snapshot.id());
-                return snapshot;
-            }, this.ioExecutor))
-        );
+        Path target = this.mapsDirectory.resolve(templateName + SNAPSHOT_EXTENSION);
+        return this.onMain(() -> {
+            world.save(true);
+            return null;
+        }).thenCompose(ignored -> this.worlds.exportWorldAsync(world, templateName))
+            .thenCompose(archive -> CompletableFuture.runAsync(() -> writeArchive(target, archive), this.ioExecutor))
+            .thenRun(() -> this.templates.put(normalize(templateName), target));
     }
 
-    private CompletableFuture<Void> importTemplate(Path path) {
-        String fileName = path.getFileName().toString();
-        String templateName = fileName.substring(0, fileName.length() - SNAPSHOT_EXTENSION.length());
-        validateTemplateName(templateName);
-        return CompletableFuture.supplyAsync(() -> {
-            try {
-                return Files.readAllBytes(path);
-            } catch (IOException exception) {
-                throw new CompletionException(exception);
-            }
-        }, this.ioExecutor).thenCompose(this.worlds::importSnapshotAsync).thenAccept(snapshot ->
-            this.templates.put(normalize(templateName), snapshot.id())
-        );
-    }
-
-    private UUID resolve(String templateName) {
-        UUID registered = this.templates.get(normalize(templateName));
-        if (registered != null) {
-            return registered;
-        }
+    private UUID resolveSnapshot(String templateName) {
         return this.worlds.snapshots().stream()
             .filter(snapshot -> snapshot.label().equalsIgnoreCase(templateName) || snapshot.sourceWorld().equalsIgnoreCase(templateName))
             .findFirst()
-            .map(snapshot -> {
-                this.templates.put(normalize(templateName), snapshot.id());
-                return snapshot.id();
-            })
+            .map(snapshot -> snapshot.id())
             .orElse(null);
+    }
+
+    private static byte[] readArchive(Path path) {
+        try {
+            return Files.readAllBytes(path);
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        }
+    }
+
+    private static void writeArchive(Path target, byte[] archive) {
+        Path temporary = null;
+        try {
+            Files.createDirectories(target.getParent());
+            temporary = Files.createTempFile(target.getParent(), target.getFileName().toString() + ".", ".tmp");
+            Files.write(temporary, archive, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+            try {
+                Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+            } catch (AtomicMoveNotSupportedException exception) {
+                Files.move(temporary, target, StandardCopyOption.REPLACE_EXISTING);
+            }
+        } catch (IOException exception) {
+            throw new UncheckedIOException(exception);
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException ignored) {
+                }
+            }
+        }
     }
 
     private <T> CompletableFuture<T> onMain(Supplier<T> action) {

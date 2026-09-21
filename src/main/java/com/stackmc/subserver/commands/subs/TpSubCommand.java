@@ -11,7 +11,6 @@ import org.bukkit.command.TabExecutor;
 import org.bukkit.entity.Player;
 
 import java.util.List;
-import java.util.stream.Collectors;
 
 @RequiredArgsConstructor
 public class TpSubCommand implements TabExecutor {
@@ -45,6 +44,16 @@ public class TpSubCommand implements TabExecutor {
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command rootCommand, String label, String[] args) {
-        return Bukkit.getWorlds().stream().map(World::getName).collect(Collectors.toList());
+        if (args.length != 1) {
+            return List.of();
+        }
+        String prefix = args[0].toLowerCase();
+        return Instance.getInstances().stream()
+                .flatMap(instance -> instance.getWorlds().stream())
+                .map(Instance.InstanciableWorld::getWorld)
+                .map(World::getName)
+                .filter(name -> name.toLowerCase().startsWith(prefix))
+                .sorted()
+                .toList();
     }
 }

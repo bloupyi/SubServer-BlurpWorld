@@ -13,6 +13,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CompletionException;
 
 public final class SubServer extends JavaPlugin {
 
@@ -40,7 +42,7 @@ public final class SubServer extends JavaPlugin {
             if (error != null) {
                 getLogger().severe("Impossible de charger les snapshots BlurpWorld : " + rootMessage(error));
             } else {
-                getLogger().info(count + " snapshot(s) BlurpWorld chargé(s).");
+                getLogger().info(count + " archive(s) BlurpWorld indexée(s).");
             }
             instanceFactory.startLoop();
         }));
@@ -50,6 +52,23 @@ public final class SubServer extends JavaPlugin {
     public void onDisable() {
         instanceFactory.stopLoop();
         List<Instance> instancesSnapshot = new ArrayList<>(Instance.getInstances());
+        if (this.worldRepository != null) {
+            long started = System.nanoTime();
+            CompletableFuture<?>[] saves = instancesSnapshot.stream()
+                    .flatMap(instance -> instance.getWorlds().stream())
+                    .filter(Instance.InstanciableWorld::isSavable)
+                    .map(world -> this.worldRepository.persist(world.getTemplateName(), world.getWorld()))
+                    .toArray(CompletableFuture[]::new);
+            try {
+                CompletableFuture.allOf(saves).join();
+                if (saves.length > 0) {
+                    getLogger().info(saves.length + " monde(s) persistant(s) sauvegardé(s) en "
+                            + String.format(java.util.Locale.ROOT, "%.1f ms", (System.nanoTime() - started) / 1_000_000.0D));
+                }
+            } catch (CompletionException exception) {
+                getLogger().severe("Impossible de sauvegarder tous les mondes persistants : " + rootMessage(exception));
+            }
+        }
         instancesSnapshot.forEach(instance -> instance.close(false));
         Instance.getInstances().clear();
         if (this.worldRepository != null) {

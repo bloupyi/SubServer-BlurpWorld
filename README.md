@@ -3,6 +3,7 @@
 ## About SubServer
 
 SubServer is a Minecraft **26.2** plugin for the BlurpWorld Paper fork. It splits a server into isolated instances backed by compressed BlurpWorld snapshots.
+BlurpWorld itself does not require SubServer; this plugin is only an optional instance-management integration.
 
 ## Requirements
 
@@ -14,9 +15,9 @@ SubServer is a Minecraft **26.2** plugin for the BlurpWorld Paper fork. It split
 
 ## Snapshots
 
-Place durable `.bws` archives in `plugins/SubServer/maps`. The file name without `.bws` is the template name used by `InstanceType#addWorld`. Snapshots already loaded in BlurpWorld can also be resolved by their label or source-world name.
+Place durable `.bws` archives in `plugins/SubServer/maps`. The file name without `.bws` is the template name used by `InstanceType#addWorld`. Archives are indexed at startup and imported directly into memory only when an instance is requested. Snapshots already loaded in BlurpWorld can also be resolved by their label or source-world name.
 
-Temporary instance worlds are restored asynchronously and discarded on close. Worlds marked savable are snapshotted, exported back to `plugins/SubServer/maps/<template>.bws`, then unloaded.
+Temporary instance worlds are restored asynchronously and discarded on close. Worlds marked savable are exported atomically back to `plugins/SubServer/maps/<template>.bws`, then unloaded. The archive is the only persistent representation on disk.
 
 The `.bws` archive also carries the seed, time, spawn, gamerules, weather, border, PDC and other per-world saved data. Each restored instance receives a fresh Paper world UUID so clones can coexist. Instance worlds therefore do not create Paper dimension folders or metadata files.
 

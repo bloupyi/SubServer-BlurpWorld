@@ -53,7 +53,10 @@ public class LoadSubCommand implements TabExecutor {
         if (args.length == 1) {
             return Collections.emptyList();
         }
-
-        return plugin.getWorldRepository().templateNames().stream().sorted().toList();
+        String prefix = args[args.length - 1].toLowerCase();
+        return plugin.getWorldRepository().templateNames().stream()
+                .filter(name -> name.toLowerCase().startsWith(prefix))
+                .sorted()
+                .toList();
     }
 }
