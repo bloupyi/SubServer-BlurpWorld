@@ -88,7 +88,12 @@ public final class BlurpWorldRepository {
             }
             world.setAutoSave(false);
             return world;
-        })).thenCompose(world -> world.getChunkAtAsync(world.getSpawnLocation(), true).thenApply(ignored -> world));
+        })).thenCompose(world -> world.getChunkAtAsync(world.getSpawnLocation(), true).handle((ignored, error) -> {
+            if (error != null) {
+                this.plugin.getLogger().warning("Préchargement du spawn de " + destinationName + " impossible : " + rootMessage(error));
+            }
+            return world;
+        }));
     }
 
     public CompletableFuture<Void> release(String templateName, World world, boolean save) {
@@ -187,5 +192,13 @@ public final class BlurpWorldRepository {
 
     private static String normalize(String value) {
         return value.toLowerCase(Locale.ROOT);
+    }
+
+    private static String rootMessage(Throwable throwable) {
+        Throwable current = throwable;
+        while (current.getCause() != null) {
+            current = current.getCause();
+        }
+        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 }
