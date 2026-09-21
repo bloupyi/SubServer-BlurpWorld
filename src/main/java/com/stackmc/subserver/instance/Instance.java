@@ -118,6 +118,7 @@ public class Instance {
             new ArrayList<>(bukkitWorld.getPlayers()).forEach(player -> player.teleport(fallback));
 
             if (!persistSavableWorlds) {
+                plugin.getWorldRepository().releaseSpawnWarmup(bukkitWorld);
                 if (!Bukkit.unloadWorld(bukkitWorld, false)) {
                     Bukkit.getLogger().warning("Déchargement du monde " + worldName + " impossible pendant l'arrêt.");
                 } else {
@@ -252,8 +253,11 @@ public class Instance {
         }
         offlinePlayers.add(player);
         emptySince = 0;
-        player.teleport(target.getWorld().getSpawnLocation());
-        return true;
+        boolean teleported = player.teleport(target.getWorld().getSpawnLocation());
+        if (teleported) {
+            plugin.getWorldRepository().releaseSpawnWarmup(target.getWorld());
+        }
+        return teleported;
     }
 
     /** {@code true} si plus aucun joueur connecte n'est dans cette instance. */

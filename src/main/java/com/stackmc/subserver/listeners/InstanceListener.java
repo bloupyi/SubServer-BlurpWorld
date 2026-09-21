@@ -17,6 +17,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
 
@@ -72,6 +73,11 @@ public class InstanceListener implements Listener {
         instance.dispatchEvent(event);
         instance.sendMessage(event.joinMessage());
         instance.joinInstance(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onPlayerChangedWorld(PlayerChangedWorldEvent event) {
+        plugin.getWorldRepository().releaseSpawnWarmup(event.getPlayer().getWorld());
     }
 
     @EventHandler
