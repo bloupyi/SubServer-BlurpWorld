@@ -9,8 +9,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -22,20 +20,17 @@ import java.util.concurrent.Executors;
 import java.util.function.Supplier;
 import java.util.stream.Stream;
 import org.bukkit.Bukkit;
-import org.bukkit.Location;
 import org.bukkit.World;
 import org.bukkit.WorldCreator;
 
 public final class BlurpWorldRepository {
 
     private static final String SNAPSHOT_EXTENSION = ".bws";
-    private static final double TELEPORT_CHUNK_MARGIN = 3.3000001D;
 
     private final SubServer plugin;
     private final BlurpWorldManager worlds;
     private final Path mapsDirectory;
     private final ConcurrentHashMap<String, Path> templates = new ConcurrentHashMap<>();
-    private final Set<String> warmedSpawns = ConcurrentHashMap.newKeySet();
     private final ExecutorService ioExecutor = Executors.newVirtualThreadPerTaskExecutor();
 
     public BlurpWorldRepository(SubServer plugin, BlurpWorldManager worlds) {
@@ -104,7 +99,6 @@ public final class BlurpWorldRepository {
     public CompletableFuture<Void> release(String templateName, World world, boolean save) {
         CompletableFuture<?> saved = save ? this.persist(templateName, world) : CompletableFuture.completedFuture(null);
         return saved.thenCompose(ignored -> this.onMain(() -> {
-            this.releaseSpawnWarmup(world);
             if (!Bukkit.unloadWorld(world, false)) {
                 throw new IllegalStateException("Impossible de décharger " + world.getName());
             }
@@ -114,14 +108,7 @@ public final class BlurpWorldRepository {
     }
 
     public void discard(String worldName) {
-        this.warmedSpawns.remove(normalize(worldName));
         this.worlds.discard(worldName);
-    }
-
-    public void releaseSpawnWarmup(World world) {
-        if (this.warmedSpawns.remove(normalize(world.getName()))) {
-            world.removePluginChunkTickets(this.plugin);
-        }
     }
 
     public void shutdown() {
@@ -140,29 +127,8 @@ public final class BlurpWorldRepository {
     }
 
     private CompletableFuture<Void> preloadSpawn(World world) {
-        Location spawn = world.getSpawnLocation();
-        int minX = ((int) Math.floor(spawn.getX() - TELEPORT_CHUNK_MARGIN)) >> 4;
-        int maxX = ((int) Math.floor(spawn.getX() + TELEPORT_CHUNK_MARGIN)) >> 4;
-        int minZ = ((int) Math.floor(spawn.getZ() - TELEPORT_CHUNK_MARGIN)) >> 4;
-        int maxZ = ((int) Math.floor(spawn.getZ() + TELEPORT_CHUNK_MARGIN)) >> 4;
-        List<CompletableFuture<?>> loads = new ArrayList<>((maxX - minX + 1) * (maxZ - minZ + 1));
-        for (int x = minX; x <= maxX; x++) {
-            for (int z = minZ; z <= maxZ; z++) {
-                loads.add(world.getChunkAtAsync(x, z, true, true));
-            }
-        }
-        return CompletableFuture.allOf(loads.toArray(CompletableFuture[]::new)).thenCompose(ignored -> this.onMain(() -> {
-            if (!world.getPlayers().isEmpty()) {
-                return null;
-            }
-            for (int x = minX; x <= maxX; x++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    world.addPluginChunkTicket(x, z, this.plugin);
-                }
-            }
-            this.warmedSpawns.add(normalize(world.getName()));
-            return null;
-        }));
+        // BlurpWorld charge lui-même les chunks visibles depuis le spawn à la création d'un monde mémoire
+        return this.worlds.spawnWarmup(world);
     }
 
     private UUID resolveSnapshot(String templateName) {
