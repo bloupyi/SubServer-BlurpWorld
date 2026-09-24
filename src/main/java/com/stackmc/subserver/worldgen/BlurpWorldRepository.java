@@ -88,11 +88,6 @@ public final class BlurpWorldRepository {
             }
             world.setAutoSave(false);
             return world;
-        })).thenCompose(world -> this.preloadSpawn(world).handle((ignored, error) -> {
-            if (error != null) {
-                this.plugin.getLogger().warning("Préchargement du spawn de " + destinationName + " impossible : " + rootMessage(error));
-            }
-            return world;
         }));
     }
 
@@ -124,11 +119,6 @@ public final class BlurpWorldRepository {
         }).thenCompose(ignored -> this.worlds.exportWorldAsync(world, templateName))
             .thenCompose(archive -> CompletableFuture.runAsync(() -> writeArchive(target, archive), this.ioExecutor))
             .thenRun(() -> this.templates.put(normalize(templateName), target));
-    }
-
-    private CompletableFuture<Void> preloadSpawn(World world) {
-        // BlurpWorld charge lui-même les chunks visibles depuis le spawn à la création d'un monde mémoire
-        return this.worlds.spawnWarmup(world);
     }
 
     private UUID resolveSnapshot(String templateName) {
@@ -197,13 +187,5 @@ public final class BlurpWorldRepository {
 
     private static String normalize(String value) {
         return value.toLowerCase(Locale.ROOT);
-    }
-
-    private static String rootMessage(Throwable throwable) {
-        Throwable current = throwable;
-        while (current.getCause() != null) {
-            current = current.getCause();
-        }
-        return current.getMessage() == null ? current.getClass().getSimpleName() : current.getMessage();
     }
 }
