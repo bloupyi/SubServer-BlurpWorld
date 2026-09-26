@@ -80,7 +80,7 @@ public class InstanceFactory {
             Set<Instance> typeInstances = this.instances.computeIfAbsent(type, key -> new HashSet<>());
             int missing = type.getMaxInstancesCount() - typeInstances.size();
             for (int i = 0; i < missing; i++) {
-                Instance instance = open(type, null, null);
+                Instance instance = open(type, null, null, null);
                 if (type.isAutoJoin()) autoJoinInstance = instance;
             }
         }
@@ -102,11 +102,23 @@ public class InstanceFactory {
     @Nullable
     public Instance createInstance(InstanceType type, @Nullable List<InstanceType.InstanciableWorld> worlds,
                                    @Nullable Consumer<Instance> onReady) {
+        return createInstance(type, worlds, onReady, null);
+    }
+
+    /**
+     * Pareil, en prevenant {@code onFailure} si un monde ne se charge pas.
+     *
+     * <p>L'instance est alors fermee et {@code onReady} n'est jamais appele : sans ce rappel,
+     * celui qui attendait l'instance ne l'apprenait pas, et le joueur restait sans nouvelles.</p>
+     */
+    @Nullable
+    public Instance createInstance(InstanceType type, @Nullable List<InstanceType.InstanciableWorld> worlds,
+                                   @Nullable Consumer<Instance> onReady, @Nullable Runnable onFailure) {
         Set<Instance> typeInstances = this.instances.computeIfAbsent(type, key -> new HashSet<>());
         if (typeInstances.size() >= InstanceType.MAX_INSTANCES_LIMIT) {
             return null;
         }
-        return open(type, worlds, onReady);
+        return open(type, worlds, onReady, onFailure);
     }
 
     /** Nombre d'instances ouvertes de ce type. */
@@ -115,11 +127,11 @@ public class InstanceFactory {
     }
 
     private Instance open(InstanceType type, @Nullable List<InstanceType.InstanciableWorld> worlds,
-                          @Nullable Consumer<Instance> onReady) {
+                          @Nullable Consumer<Instance> onReady, @Nullable Runnable onFailure) {
         Instance instance = new Instance(type.getName() + "_" + nameCounter.incrementAndGet(), plugin, type);
         this.instances.computeIfAbsent(type, key -> new HashSet<>()).add(instance);
         instance.register();
-        generateWorlds(type, instance, worlds == null ? type.getWorlds() : worlds, onReady);
+        generateWorlds(type, instance, worlds == null ? type.getWorlds() : worlds, onReady, onFailure);
         return instance;
     }
 
@@ -154,7 +166,7 @@ public class InstanceFactory {
 
     private void generateWorlds(InstanceType type, Instance instance,
                                 List<InstanceType.InstanciableWorld> worlds,
-                                @Nullable Consumer<Instance> onReady) {
+                                @Nullable Consumer<Instance> onReady, @Nullable Runnable onFailure) {
         int max = worlds.size();
         if (max == 0) {
             instance.setState(InstanceState.CLOSED);
@@ -186,10 +198,15 @@ public class InstanceFactory {
                     }
                 });
             }, () -> {
-                aborted.set(true);
+                if (aborted.getAndSet(true)) {
+                    return;
+                }
                 Bukkit.getLogger().warning("Instance " + instance.getName()
                         + " : monde " + world.getWorldName() + " non charge, l'instance est abandonnee.");
                 instance.close();
+                if (onFailure != null) {
+                    onFailure.run();
+                }
             });
         }
     }

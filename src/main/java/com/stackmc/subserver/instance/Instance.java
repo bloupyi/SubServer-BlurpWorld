@@ -52,6 +52,9 @@ public class Instance {
         return matches.size() == 1 ? matches.get(0) : null;
     }
 
+    /** Longueur maximale d'un nom de monde BlurpWorld. */
+    static final int MAX_WORLD_NAME = 64;
+
     private final String name;
     private final SubServer plugin;
     private final InstanceType type;
@@ -183,7 +186,7 @@ public class Instance {
         final Consumer<String> finalCallback = (callback == null ? (s -> {}) : callback);
         final Runnable finalFailure = (onFailure == null ? () -> {} : onFailure);
 
-        String destWorldName = isSavable ? worldName : getUniqueId() + "_" + worldName;
+        String destWorldName = isSavable ? worldName : copyName(worldName);
 
         long startTime = System.currentTimeMillis();
         plugin.getWorldRepository().loadWorld(worldName, destWorldName).whenComplete((world, error) -> {
@@ -198,6 +201,20 @@ public class Instance {
             finalCallback.accept("Monde " + destWorldName + " chargé en " + totalTime + "ms ou "
                     + ((float) totalTime / 50f) + " ticks .");
         });
+    }
+
+    /**
+     * Nom de la copie jetable d'un monde pour cette instance.
+     *
+     * <p>BlurpWorld refuse les noms de plus de {@value #MAX_WORLD_NAME} caracteres : prefixer
+     * l'UUID complet (37 caracteres) ne laissait que 27 caracteres au modele, et toute copie
+     * d'un modele plus long echouait au chargement. Le prefixe est donc une moitie de l'UUID
+     * en base 36, et le modele garde sa fin s'il faut encore couper.</p>
+     */
+    String copyName(String worldName) {
+        String prefix = Long.toString(uniqueId.getLeastSignificantBits() & Long.MAX_VALUE, 36) + "_";
+        int room = MAX_WORLD_NAME - prefix.length();
+        return prefix + (worldName.length() > room ? worldName.substring(worldName.length() - room) : worldName);
     }
 
     /** Signale l'echec de chargement sur le thread serveur. */
