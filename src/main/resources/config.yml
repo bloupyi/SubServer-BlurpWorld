@@ -6,7 +6,10 @@ instance-event:
 
 # Ponts entre instances (sous-serveurs). Par defaut chaque instance est isolee.
 cross-instance:
-  # true = les joueurs d'une instance voient ceux des autres instances.
-  visibility: false
+  # true = la tab list affiche les joueurs de toutes les instances (tab global).
+  # En jeu, chaque instance reste isolee car elle a ses propres mondes.
+  # Ancien nom de l'option : "visibility".
+  tab: false
   # true = le chat est partage entre toutes les instances (chat global).
   chat: false
+  # Modifiables en jeu : /subserver global <chat|tab> [on|off]

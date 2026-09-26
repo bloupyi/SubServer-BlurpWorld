@@ -244,7 +244,7 @@ public class Instance {
 
         Instance oldInstance = Instance.getInstance(player.getWorld());
         if (oldInstance != null && oldInstance != this) oldInstance.quitInstance(player);
-        if (!plugin.isCrossInstanceVisibility()) {
+        if (!plugin.isCrossInstanceTab()) {
             getPlayers().forEach(target2 -> {
                 player.showPlayer(plugin, target2);
                 target2.showPlayer(plugin, player);
@@ -272,7 +272,7 @@ public class Instance {
             return;
         }
 
-        if (!plugin.isCrossInstanceVisibility()) {
+        if (!plugin.isCrossInstanceTab()) {
             getPlayers().forEach(target -> {
                 player.hidePlayer(plugin, target);
                 target.hidePlayer(plugin, player);

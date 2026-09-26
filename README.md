@@ -57,6 +57,20 @@ factory.createInstance(game, instance -> instance.joinInstance(player));
 
 `Instance#loadWorld` takes an optional failure callback. Snapshot preparation, import, export and persistence run asynchronously; Bukkit world attachment and unloading remain on the server thread.
 
+### Global chat and tab list
+
+Each instance is isolated by default: its chat only reaches its own players, and the tab list only shows them. Two options in `config.yml` open this up:
+
+```yaml
+cross-instance:
+  tab: false   # true = the tab list shows the players of every instance
+  chat: false  # true = chat messages reach every instance
+```
+
+Instances always keep their own worlds, so players from other instances never appear in game, only in the tab list. `tab` replaces the former `visibility` key, which is still read when `tab` is absent.
+
+Both options can be changed live with `/subserver global <chat|tab> [on|off]`; the new value is applied to connected players at once and saved to `config.yml`. `/subserver global` without arguments prints the current state.
+
 ## Contributors
 - [LoanSpac](https://github.com/LoanSpac)
 - [Clooooud](https://github.com/Clooooud)

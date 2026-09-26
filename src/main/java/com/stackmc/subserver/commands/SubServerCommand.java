@@ -15,6 +15,7 @@ public class SubServerCommand extends AbstractCommand {
         this.registerSubCommand("load", new LoadSubCommand(plugin));
         this.registerSubCommand("close", new CloseSubCommand(plugin));
         this.registerSubCommand("list", new ListSubCommand(plugin));
+        this.registerSubCommand("global", new GlobalSubCommand(plugin));
     }
 
     @Override

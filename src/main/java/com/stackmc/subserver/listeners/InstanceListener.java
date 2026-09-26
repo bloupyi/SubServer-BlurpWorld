@@ -33,7 +33,7 @@ public class InstanceListener implements Listener {
 
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
-        if (!plugin.isCrossInstanceVisibility()) {
+        if (!plugin.isCrossInstanceTab()) {
             Bukkit.getOnlinePlayers().forEach(target -> {
                 event.getPlayer().hidePlayer(plugin, target);
                 target.hidePlayer(plugin, event.getPlayer());
