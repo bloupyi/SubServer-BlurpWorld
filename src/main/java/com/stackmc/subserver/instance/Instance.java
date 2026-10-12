@@ -18,6 +18,7 @@ import org.bukkit.event.Listener;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -26,13 +27,15 @@ import java.util.stream.Collectors;
 public class Instance {
     @Getter private static final Set<Instance> instances = new HashSet<>();
 
+    /** Instance de chaque monde charge : appele par les plugins a chaque tick, un parcours ne tient pas. */
+    private static final Map<UUID, Instance> byWorld = new ConcurrentHashMap<>();
+
     public static Instance getInstance(World world) {
-        return instances.stream()
-                .filter(instance -> instance.getWorlds()
-                        .stream()
-                        .anyMatch(instanciableWorld -> instanciableWorld.getWorld().equals(world)))
-                .findAny()
-                .orElse(null);
+        if (world == null) {
+            return null;
+        }
+        Instance instance = byWorld.get(world.getUID());
+        return instance != null && instances.contains(instance) ? instance : null;
     }
 
     public static Instance getInstance(String name) {
@@ -136,6 +139,7 @@ public class Instance {
             }
         });
 
+        worlds.forEach(world -> byWorld.remove(world.getWorld().getUID(), this));
         worlds.clear();
         offlinePlayers.clear();
         instances.remove(this);
@@ -173,6 +177,7 @@ public class Instance {
                         return;
                     }
                     worlds.remove(target);
+                    byWorld.remove(bukkitWorld.getUID(), this);
                 });
         return true;
     }
@@ -232,6 +237,7 @@ public class Instance {
 
     public void addWorld(World world, boolean isSavable, String templateName) {
         worlds.add(new InstanciableWorld(world, isSavable, templateName));
+        byWorld.put(world.getUID(), this);
     }
 
     public boolean joinInstance(Player player) {
